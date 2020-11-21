@@ -1,51 +1,105 @@
 """
-Server side.
+Server side script. Originally based on sentdex's code.
+
+This program allows a user to connect to a host server and send chat messages
+through the server to another user.
+
+Author: Joseph Grecco II
+Date: November 22nd, 2020
+
 """
-import socket, sys, threading
-from threading import Thread
 
-users = []
-class User(object):
-    pass
+import socket
+import select
 
-#@ make the TCP socket and put it in the variable sock
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-port = int(sys.argv[1])
-#@ bind sock on the default ip address, with the port found in port
-sock.bind(("127.0.0.1", port))
-sock.listen(1)
+HEADERSIZE = 10
+ip_address = "127.0.0.1"
+port = 1060
 
-def handle_connection(conn,info):
-    user = User()
-    users.append(user)
-    user.info = info
-    user.conn = conn
-    #@ send a "What is your name?" prompt on the connection conn
-    user.conn.sendall(b"What is your name?")
-    name = conn.recv(1024)
-    user.name = name
-    msgToSend = "Welcome " + str(user.name) + "!"
-    #@ send a welcome message along conn that includes the name that was received
-    user.conn.sendall(msgToSend.encode())
-    try:
-        while True:
-            #@ receive some data from conn
-            data = user.conn.recv(1024)
-            for other in users:
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-                if other == user:
-                    continue
-                try:
-                    other.conn.sendall(name+b": "+data)
-                except:
-                    users.remove(other)
-    except:
-        #@ close conn
-        user.conn.close()
-        try:
-            del users[info]
-        except:
-            pass
+server_socket.bind((ip_address, port))
+server_socket.listen()
+
+sockets_list = [server_socket]
+fileDict = {"test.txt":"test text!"}
+
+clients = {}
+
+
+
+def recieve_message(client_socket):
+	try:
+		message_header = client_socket.recv(HEADERSIZE)
+		if not len(message_header):
+			return False
+		
+		message_length = int(message_header.decode('utf-8').strip())
+		return {'header': message_header, 'data': client_socket.recv(message_length)}
+	except:
+		return False
 
 while True:
-    Thread(target=handle_connection,args=sock.accept()).start()
+	read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
+
+	for notified_socket in read_sockets:
+		if notified_socket == server_socket:
+			client_socket, client_address = server_socket.accept()
+
+			user = recieve_message(client_socket)
+
+			if user is False:
+				continue
+
+			sockets_list.append(client_socket)
+			
+			clients[client_socket] = user
+			welcomeMsg = "Welcome " + user['data'].decode("utf-8") + "!"
+			welcomeMsgHead = f"{len(welcomeMsg):<{HEADERSIZE}}".encode('utf-8')
+			client_socket.send(welcomeMsgHead + welcomeMsg.encode("utf-8"))
+			print('Accepted new connection from {}:{}, username: {}'.format(*client_address, user['data'].decode('utf-8')))
+		
+		else:
+			message = recieve_message(notified_socket)
+			if message is False:
+				print('Closed connection from: {}'.format(clients[notified_socket]['data'].decode('utf-8')))
+				sockets_list.remove(notified_socket)
+				del clients[notified_socket]
+				continue
+
+			user = clients[notified_socket]
+			strMsg = message["data"].decode('utf-8')
+			print(f'Received message from {user["data"].decode("utf-8")}: {strMsg}')
+
+
+			# Here the server handles commands entered.
+			if (strMsg.startswith("!")):
+				tmpList = strMsg.split(" ")
+				print(tmpList)
+				if (len(tmpList) > 1):
+					if (tmpList[0] == "!read"):
+							if (tmpList[1] in fileDict):
+								fileStrToSend = fileDict[tmpList[1]].encode('utf-8')
+								print(fileStrToSend)
+								fileStrHeader = f"{len(fileStrToSend):<{HEADERSIZE}}".encode('utf-8')
+								client_socket.send(fileStrHeader + fileStrToSend)
+								notified_socket.send(fileStrHeader + fileStrToSend)
+							else:
+								print("hrere")
+								tmpMsg = "File not found on server! Try uploading it!".encode('utf-8')
+								tmpMsgHeader = f"{len(tmpMsg):<{HEADERSIZE}}".encode('utf-8')
+								client_socket.send(tmpMsgHeader + tmpMsg)
+								notified_socket.send(tmpMsgHeader + tmpMsg)
+						
+					elif (tmpList[0] == "!upload"):
+							print("we did it reddit")
+			print('here')
+
+			for client_socket in clients:
+				if client_socket != notified_socket:
+					client_socket.send(user['header'] + user['data'] + message['header'] + message['data'])
+	
+	for notified_socket in exception_sockets:
+		sockets_list.remove(notified_socket)
+		del clients[notified_socket]
