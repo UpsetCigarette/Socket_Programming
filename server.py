@@ -12,24 +12,26 @@ Date: November 22nd, 2020
 import socket
 import select
 
+# The header size. This lets the client know how long the message will be.
 HEADERSIZE = 10
 ip_address = "127.0.0.1"
 port = 1060
 
+# Setting up and connecting the socket.
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
 server_socket.bind((ip_address, port))
 server_socket.listen()
 
+#Initializing the sockets_list, clients, and file data to be stored on the server. 
 sockets_list = [server_socket]
 fileDict = {"test.txt":"test text!"}
-
 clients = {}
 
 
 
 def recieve_message(client_socket):
+	# This function handles receiving data from the clients.
 	try:
 		message_header = client_socket.recv(HEADERSIZE)
 		if not len(message_header):
@@ -39,12 +41,15 @@ def recieve_message(client_socket):
 		return {'header': message_header, 'data': client_socket.recv(message_length)}
 	except:
 		return False
-
+	
+newUser = False # T/F to signal if there's a new user to be welcomed.
 while True:
 	read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
-
 	for notified_socket in read_sockets:
+		# Gets the socket to be notified.
+		print('start for loop')
 		if notified_socket == server_socket:
+			# If the user hasn't connected before.
 			client_socket, client_address = server_socket.accept()
 
 			user = recieve_message(client_socket)
@@ -53,15 +58,17 @@ while True:
 				continue
 
 			sockets_list.append(client_socket)
-			
+			newUser = True # Sets the new user command to true, so the server sends a notification to other users.
 			clients[client_socket] = user
+			# Sending the welcome message to the new user.
 			welcomeMsg = "Welcome " + user['data'].decode("utf-8") + "!"
+			welcomeMsg += "\nType a message and press enter to send!\nType '!help' for a list of commands."
 			welcomeMsgHead = f"{len(welcomeMsg):<{HEADERSIZE}}".encode('utf-8')
 			client_socket.send(welcomeMsgHead + welcomeMsg.encode("utf-8"))
 			print('Accepted new connection from {}:{}, username: {}'.format(*client_address, user['data'].decode('utf-8')))
 		
 		else:
-			message = recieve_message(notified_socket)
+			message = recieve_message(notified_socket) # Gets whatever text the user sent to the server.
 			if message is False:
 				print('Closed connection from: {}'.format(clients[notified_socket]['data'].decode('utf-8')))
 				sockets_list.remove(notified_socket)
@@ -73,33 +80,60 @@ while True:
 			print(f'Received message from {user["data"].decode("utf-8")}: {strMsg}')
 
 
+			if (newUser == True):
+				# This sends a notification to all other users when someone joins the server.
+				newUser = False
+				for client_socket in clients:
+					if client_socket != notified_socket:
+						newUserMsg = (user['data']) + " has joined the server!".encode('utf-8')
+						newUserHeader = (f"{len(newUserMsg):<{HEADERSIZE}}").encode('utf-8')
+						client_socket.send(user['header'] + user['data'] + newUserHeader + newUserMsg)
+						print("msgfff sent")
+			
 			# Here the server handles commands entered.
-			if (strMsg.startswith("!")):
-				tmpList = strMsg.split(" ")
+			elif (strMsg.startswith("!")):
+				tmpList = strMsg.split(" ") # We split the string to make it easier to check the first command.
 				print(tmpList)
 				if (len(tmpList) > 1):
+					# If the command has more than one item, it is either a read or upload command.
 					if (tmpList[0] == "!read"):
-							if (tmpList[1] in fileDict):
-								fileStrToSend = fileDict[tmpList[1]].encode('utf-8')
+						# When reading a file, it either exists or it doesn't. This handles that.
+							if (tmpList[1] in fileDict and tmpList[1].strip() != ""):
+								fileStrToSend = "!".encode('utf-8') + fileDict[tmpList[1]].encode('utf-8')
 								print(fileStrToSend)
 								fileStrHeader = f"{len(fileStrToSend):<{HEADERSIZE}}".encode('utf-8')
-								client_socket.send(fileStrHeader + fileStrToSend)
 								notified_socket.send(fileStrHeader + fileStrToSend)
 							else:
 								print("hrere")
-								tmpMsg = "File not found on server! Try uploading it!".encode('utf-8')
+								tmpMsg = "!File not found on server! Try uploading it!".encode('utf-8')
 								tmpMsgHeader = f"{len(tmpMsg):<{HEADERSIZE}}".encode('utf-8')
-								client_socket.send(tmpMsgHeader + tmpMsg)
 								notified_socket.send(tmpMsgHeader + tmpMsg)
 						
 					elif (tmpList[0] == "!upload"):
+						# Uploads a file and stores it's file name and text within the fileDict.
 							print("we did it reddit")
-			print('here')
+				# Other commands.
+				elif (tmpList[0] == "!exit"):
+					# If a user is exiting, this removes their data from the server and sends a confirmation to the client.
+						tmpMsg = "!exit".encode('utf-8')
+						tmpMsgHeader = f"{len(tmpMsg):<{HEADERSIZE}}".encode('utf-8')
+						notified_socket.send(tmpMsgHeader + tmpMsg)
+						print('Closed connection from: {}'.format(clients[notified_socket]['data'].decode('utf-8')))
+						sockets_list.remove(notified_socket)
+						del clients[notified_socket]
+				# Extra code for read command, in case the user simply typed "!read".
+				elif (tmpList[0] == "!read"):
+					tmpMsg = "!File not found on server! Try uploading it!".encode('utf-8')
+					tmpMsgHeader = f"{len(tmpMsg):<{HEADERSIZE}}".encode('utf-8')
+					client_socket.send(tmpMsgHeader + tmpMsg)
+			else:
+				# Handles regular chat messages sent to the server.
+				for client_socket in clients:
+					if client_socket != notified_socket:
+						client_socket.send(user['header'] + user['data'] + message['header'] + message['data'])
+						print("msg sent")
 
-			for client_socket in clients:
-				if client_socket != notified_socket:
-					client_socket.send(user['header'] + user['data'] + message['header'] + message['data'])
-	
+	# If we have an exception, removes that socket from the list.
 	for notified_socket in exception_sockets:
 		sockets_list.remove(notified_socket)
 		del clients[notified_socket]
