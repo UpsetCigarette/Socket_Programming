@@ -151,6 +151,12 @@ while True:
 						tmpMsgHeader = f"{len(tmpMsg):<{HEADERSIZE}}".encode('utf-8')
 						notified_socket.send(tmpMsgHeader + tmpMsg)
 						print('Closed connection from: {}'.format(clients[notified_socket]['data'].decode('utf-8')))
+						for client_socket in clients:
+							if client_socket != notified_socket:
+								leaveUserMsg = (user['data']) + " has left the server!".encode('utf-8')
+								leaveUserHeader = (f"{len(newUserMsg):<{HEADERSIZE}}").encode('utf-8')
+								client_socket.send(user['header'] + user['data'] + leaveUserHeader + leaveUserMsg)
+						print("Exit message sent.")
 						sockets_list.remove(notified_socket)
 						del clients[notified_socket]
 				# Extra code for read command, in case the user simply typed "!read".
