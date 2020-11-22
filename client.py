@@ -10,7 +10,7 @@ Date: November 22nd, 2020
 
 """
 
-
+from os.path import *
 import socket
 import select
 import errno
@@ -27,9 +27,10 @@ global prompt_string
 global isConn
 global exitCond
 global exitMsg
-exitMsg = "List of commands:\
+helpMsg = "List of commands:\
 \n!read <filename> - reads a filename from the serverside.\
 \n!upload <filename> - not implemented yet.\
+\n!filelist - prints a list of files on the server.\
 \n!exit - closes your connection with the server and exits."
 exitCond = False
 isConn = False # Set to false until the socket has sent it's username to the server.
@@ -52,18 +53,53 @@ username_header = f"{len(username):<{HEADERSIZE}}".encode('utf-8')
 client_socket.send(username_header + username)
 
 
+def getFileContent(fileName):
+    # This function simply gets the data held within a text file.
+    # Returns -1 if the file is empty.
+    fileObj = open(fileName, "r")
+    fileListStr = fileObj.readlines()
+    if (len(fileListStr) != 0 and fileListStr[0].strip(" ") != ""):
+        tmpStr = ""
+        for line in fileListStr:
+            tmpStr += line
+        return tmpStr
+    else:
+        return -1
+
 def send():
     global exitCond
     global exitMsg
     # This function handles the sending of messages from the client to the server.
     while (True):
         global message
+        fileTxt = ""
         while (len(message) > 0):
             # First if/elif statements check for commands that are handled client side.
             if (message.split(" ")[0].startswith("!")):
                 if (message.split(" ")[0] == "!upload"):
-                    print("Not implemented yet")
+                    # This section handles uploading .txt files to the server.
+                    if (isfile(message.split(" ")[1]) and len(message.split(" ")) > 1):
+                        # If the file is empty or the file is the wrong type,
+                        # it sends that error to the server.
+                        tmp = message.split(" ")[1]
+                        if (tmp[-4:] == ".txt" and getFileContent(message.split(" ")[1]) != -1):
+                            fileTxt = getFileContent(message.split(" ")[1])
+                            fileTxtToSend = "!upload " + message.split(" ")[1] + " " + fileTxt
+                        elif (tmp[-4:] != ".txt"):
+                            fileTxt = "!wrongtype"
+                            fileTxtToSend = "!upload " + fileTxt
+                        else: 
+                            fileTxt = "!emptyfile"
+                            fileTxtToSend = "!upload " + fileTxt
+                    else:
+                        # If the file isn't found on the clients side.
+                        fileTxt = "!notfound"
+                        fileTxtToSend = "!upload " + fileTxt
+                elif (message.split(" ")[0] == "!filelist"):
+                    # Sets the message to only "!filelist" to make it consistent.
+                    message = "!filelist"
                 elif (message.split(" ")[0] == "!exit"): 
+                    # This one shuts down the client side and exits gracefully.
                     print("Shutting down client...")
                     exitCond = True
                     message = "!exit"
@@ -72,15 +108,27 @@ def send():
                     client_socket.send(exitHeader + exitMsg)
                     break
                 elif (message.split(" ")[0] == "!help"):
-                    print(exitMsg)
+                    # Prints the helpMsg
+                    print(helpMsg)
+                elif (message.split(" ")[0] == "!read"):
+                    # Simply prints a new line so that the message sent from 
+                    # the server is more readable.
+                    print("")
                 else:
+                    # The command entered doesn't exist!
                     print("Invalid command!")
             # Sends the message to the server.
             try:
                 # Encodes and sends the header and message to the server.
-                message = message.encode('utf-8')
-                message_header = f"{len(message):<{HEADERSIZE}}".encode('utf-8')
-                client_socket.send(message_header + message)
+                if (fileTxt != ""):
+                    fileBytesToSend = fileTxtToSend.encode('utf-8')
+                    fileByteHeader = f"{len(fileTxtToSend):<{HEADERSIZE}}".encode('utf-8')
+                    client_socket.send(fileByteHeader + fileBytesToSend)
+                    fileTxt = ""
+                else:
+                    message = message.encode('utf-8')
+                    message_header = f"{len(message):<{HEADERSIZE}}".encode('utf-8')
+                    client_socket.send(message_header + message)
                 message = input(prompt_string)
             except:
                 break
