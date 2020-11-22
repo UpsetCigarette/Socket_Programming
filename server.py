@@ -47,7 +47,6 @@ while True:
 	read_sockets, _, exception_sockets = select.select(sockets_list, [], sockets_list)
 	for notified_socket in read_sockets:
 		# Gets the socket to be notified.
-		print('start for loop')
 		if notified_socket == server_socket:
 			# If the user hasn't connected before.
 			client_socket, client_address = server_socket.accept()
@@ -88,7 +87,7 @@ while True:
 						newUserMsg = (user['data']) + " has joined the server!".encode('utf-8')
 						newUserHeader = (f"{len(newUserMsg):<{HEADERSIZE}}").encode('utf-8')
 						client_socket.send(user['header'] + user['data'] + newUserHeader + newUserMsg)
-						print("msgfff sent")
+						print("Welcome message sent.")
 			
 			# Here the server handles commands entered.
 			elif (strMsg.startswith("!")):
@@ -111,7 +110,40 @@ while True:
 						
 					elif (tmpList[0] == "!upload"):
 						# Uploads a file and stores it's file name and text within the fileDict.
-							print("we did it reddit")
+						# The first few if statements check for errors.
+						if (tmpList[1] == "!notfound"):
+							fileNote = "!File not found!".encode('utf-8')
+							fileNoteHeader = f"{len(fileNote):<{HEADERSIZE}}".encode('utf-8')
+							notified_socket.send(fileNoteHeader + fileNote)
+						elif (tmpList[1] == "!emptyfile"):
+							fileNote = "!Cannot upload empty file!".encode('utf-8')
+							fileNoteHeader = f"{len(fileNote):<{HEADERSIZE}}".encode('utf-8')
+							notified_socket.send(fileNoteHeader + fileNote)
+						elif (tmpList[1] == "!wrongtype"):
+							fileNote = "!You can only upload .txt files!".encode('utf-8')
+							fileNoteHeader = f"{len(fileNote):<{HEADERSIZE}}".encode('utf-8')
+							notified_socket.send(fileNoteHeader + fileNote)
+						else:
+							# Adds the file to the dicitonary!
+							fileText = ""
+							for num in range(2, len(tmpList)):
+								fileText += tmpList[num] + " "
+							fileDict[tmpList[1]] = fileText
+							print("File has been uploaded to server!")
+							fileNote = "!" + tmpList[1]
+							fileNote += " uploaded to server!"
+							fileNote = fileNote.encode('utf-8')
+							fileNoteHeader = f"{len(fileNote):<{HEADERSIZE}}".encode('utf-8')
+							notified_socket.send(fileNoteHeader + fileNote)
+				elif (tmpList[0] == "!filelist"):
+					# Gets and sends a list of the files currently on the server.
+					tmpStr = "!"
+					for file in fileDict:
+						tmpStr += "> " + file + " \n"
+					tmpStr = tmpStr.encode('utf-8')
+					tmpStrHeader = f"{len(tmpStr):<{HEADERSIZE}}".encode('utf-8')
+					notified_socket.send(tmpStrHeader + tmpStr) 
+
 				# Other commands.
 				elif (tmpList[0] == "!exit"):
 					# If a user is exiting, this removes their data from the server and sends a confirmation to the client.
